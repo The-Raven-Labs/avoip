@@ -8,9 +8,15 @@ import '../modules/discovery_module.dart';
 /// Fetches the live list of AV devices from the controller's registry:
 ///   GET {ApiConfig.baseUrl}/api/v1/devices
 ///   -> [{"id","ip","mac","hostname","device_type","status","last_seen",
-///        "current_tx_ip","channel","preview_url","stream_url"}, ...]
+///        "current_tx_ip","selected","channel","preview_url","stream_url"}, ...]
 /// `preview_url` is the current JPEG frame of the box and `stream_url` its
 /// live MJPEG stream; both are served by the controller.
+///
+/// A box's IP can be a 169.254.x.x address and can change between scans; its
+/// `id` (from the MAC) does not. A Tx has a `channel` ("0032"). An Rx has
+/// `selected`, what it says it is routed to: a channel, or an IP if it is
+/// still routed the old way. `current_tx_ip` is the Tx it shows, resolved
+/// from the channel.
 class DeviceApiService {
   static const int _timeoutMs = 8000;
 
@@ -140,6 +146,7 @@ class DeviceApiService {
           streamUrl: _resolveUrl(item['stream_url']),
           currentTxIp: currentTxIp.isEmpty ? null : currentTxIp,
           channel: type == DeviceType.tx ? _nonEmpty(item['channel']) : null,
+          selected: type == DeviceType.tx ? null : _nonEmpty(item['selected']),
         ),
       );
     }

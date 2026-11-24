@@ -94,19 +94,35 @@ Future<void> _routeDisplays(
   );
 
   final Set<String> failedIps;
+  // What each receiver was pointed at: the Tx's channel (so the route
+  // survives IP changes), or its IP if the channel couldn't be used.
+  final Map<String, String> targets;
   if (dests.length == 1) {
-    final ok = await AVCommandService.routeVideo(
+    final result = await AVCommandService.routeVideo(
       txIp: source.ip,
       rxIp: dests.first.ip,
     );
-    failedIps = ok ? {} : {dests.first.ip};
+    failedIps = result.success ? {} : {dests.first.ip};
+    targets = {
+      if (result.target != null) dests.first.ip: result.target!,
+    };
   } else {
-    failedIps = await AVCommandService.routeBatch({
+    final result = await AVCommandService.routeBatch({
       for (final d in dests) d.ip: source.ip,
     });
+    failedIps = result.failed;
+    targets = result.targets;
   }
 
   final failed = dests.where((d) => failedIps.contains(d.ip)).toList();
+  // Those that switched now point at the new source. The next device list
+  // overwrites this with what the box itself reports.
+  for (final d in dests) {
+    if (failedIps.contains(d.ip)) continue;
+    d.selected = targets[d.ip] ?? d.selected;
+    d.staleRoute = false;
+  }
+  AppState.instance.notifyListeners();
   _revert(failed, previous, source.id);
   if (failed.isEmpty) {
     _showResult(
@@ -141,8 +157,15 @@ Future<void> _stopDisplays(
   final failed = <Device>[];
   for (final d in dests) {
     debugPrint('[Routing] stop RX "${d.name}" ip=${d.ip}');
-    if (!await AVCommandService.stopRoute(rxIp: d.ip)) failed.add(d);
+    if (await AVCommandService.stopRoute(rxIp: d.ip)) {
+      // Nothing is routed to it now.
+      d.selected = null;
+      d.staleRoute = false;
+    } else {
+      failed.add(d);
+    }
   }
+  AppState.instance.notifyListeners();
   _revert(failed, previous, null);
   if (failed.isNotEmpty) {
     _showResult(

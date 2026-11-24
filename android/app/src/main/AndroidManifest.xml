@@ -50,4 +50,6 @@
         </intent>
     </queries>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Lets the app tell which network is Wi-Fi, to keep its traffic on it. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 </manifest>

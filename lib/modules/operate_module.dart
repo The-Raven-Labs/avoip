@@ -136,6 +136,8 @@ class _OperateModuleState extends State<OperateModule> {
                           child: PolledPreview(
                             key: ValueKey(source.id),
                             url: source.previewUrl!,
+                            deviceOffline:
+                                source.status == DeviceStatus.offline,
                           ),
                         ),
                       )
@@ -517,15 +519,55 @@ class _OperateModuleState extends State<OperateModule> {
     );
   }
 
+  // The source [dest] is showing. None if its route points at a source that
+  // is no longer on the network, even if the app still remembers one.
+  Device? _routedSource(Device dest) {
+    if (dest.staleRoute) return null;
+    final sourceId = _activeRoutes[dest.id];
+    if (sourceId == null) return null;
+    return _sources.cast<Device?>().firstWhere(
+      (s) => s?.id == sourceId,
+      orElse: () => null,
+    );
+  }
+
+  static const String _staleRouteText =
+      "Routed to a source that's no longer on the network – choose a source "
+      'again';
+
+  // A line under the source name: the channel the screen is routed by, or
+  // why its route shows nothing. Null when there is nothing to add.
+  Widget? _routeNote(Device dest, {required double fontSize}) {
+    if (dest.staleRoute) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Text(
+          _staleRouteText,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: Colors.orangeAccent, fontSize: fontSize),
+        ),
+      );
+    }
+    final channel = dest.routeChannel;
+    if (channel == null) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 1),
+      child: Text(
+        'by channel $channel',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: Colors.grey.shade500, fontSize: fontSize),
+      ),
+    );
+  }
+
   Widget _buildGridCard(Device dest) {
-    final activeSourceId = _activeRoutes[dest.id];
-    final activeSource =
-        activeSourceId != null
-            ? _sources.cast<Device?>().firstWhere(
-              (s) => s?.id == activeSourceId,
-              orElse: () => null,
-            )
-            : null;
+    final activeSource = _routedSource(dest);
+    final note = _routeNote(
+      dest,
+      fontSize: _viewMode == ViewMode.compactGrid ? 9 : 10,
+    );
     final isSelected = _selectedDestinationId == dest.id;
 
     return GestureDetector(
@@ -613,6 +655,7 @@ class _OperateModuleState extends State<OperateModule> {
                         ),
                       ],
                     ),
+                    if (note != null) note,
                     if (isSelected) ...[
                       const SizedBox(height: 8),
                       GestureDetector(
@@ -647,14 +690,8 @@ class _OperateModuleState extends State<OperateModule> {
   }
 
   Widget _buildListCard(Device dest) {
-    final activeSourceId = _activeRoutes[dest.id];
-    final activeSource =
-        activeSourceId != null
-            ? _sources.cast<Device?>().firstWhere(
-              (s) => s?.id == activeSourceId,
-              orElse: () => null,
-            )
-            : null;
+    final activeSource = _routedSource(dest);
+    final note = _routeNote(dest, fontSize: 11);
     final isSelected = _selectedDestinationId == dest.id;
 
     return GestureDetector(
@@ -744,6 +781,7 @@ class _OperateModuleState extends State<OperateModule> {
                         ),
                       ],
                     ),
+                    if (note != null) note,
                   ],
                 ),
               ),
@@ -824,7 +862,11 @@ class _OperateModuleState extends State<OperateModule> {
         fit: StackFit.expand,
         children: [
           previewUrl != null
-              ? PolledPreview(key: ValueKey(dest.id), url: previewUrl)
+              ? PolledPreview(
+                key: ValueKey(dest.id),
+                url: previewUrl,
+                deviceOffline: dest.status == DeviceStatus.offline,
+              )
               : DeviceThumbnail(device: routedSource!),
           if (showOverlay && routedSource != null)
             Positioned(

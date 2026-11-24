@@ -4,6 +4,16 @@ enum DeviceType { tx, rx, cx }
 
 enum ViewMode { largeGrid, compactGrid, highDensity, list }
 
+final RegExp _channelPattern = RegExp(r'^\d{4}$');
+final RegExp _ipv4Pattern = RegExp(r'^\d{1,3}(\.\d{1,3}){3}$');
+
+/// True for a Tx channel such as "0032".
+bool isChannelCode(String? value) =>
+    value != null && _channelPattern.hasMatch(value);
+
+/// True for an IPv4 address such as "192.168.168.209".
+bool isIpv4(String? value) => value != null && _ipv4Pattern.hasMatch(value);
+
 class Device {
   final String id;
   String name;
@@ -25,6 +35,15 @@ class Device {
   String? channel;
   // Current controller-reported route from this RX to a TX.
   String? currentTxIp;
+  // What this RX says it is routed to: a Tx channel ("0032"), or an IP when
+  // it is still routed the old way. Not persisted; refreshed from the API.
+  String? selected;
+  // The RX is routed by IP to a Tx that is no longer in the controller's
+  // device list, so it shows nothing until a source is chosen again.
+  bool staleRoute = false;
+
+  /// The Tx channel this RX is routed by, if it is routed by channel.
+  String? get routeChannel => isChannelCode(selected) ? selected : null;
 
   Device({
     required this.id,

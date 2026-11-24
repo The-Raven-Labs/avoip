@@ -48,24 +48,51 @@ class Sc1BleSetup {
   final statusEvents = StreamController<Sc1WifiStatus>.broadcast();
 
   List<ScanResult> get devices => _devices.values.toList();
+
+  /// "Authentic SC-1 1234", from the advertisement or, if that was empty,
+  /// the name the phone cached; a plain label if neither is known yet.
+  static String nameOf(ScanResult result) {
+    final adv = result.advertisementData.advName;
+    if (adv.isNotEmpty) return adv;
+    final platform = result.device.platformName;
+    return platform.isNotEmpty ? platform : 'Authentic SC-1';
+  }
   Stream<Sc1WifiStatus> get statuses => statusEvents.stream;
 
   Future<void> scan({Duration timeout = const Duration(seconds: 15)}) async {
     _devices.clear();
     await _scanSub?.cancel();
+    // The adapter can still be "unknown" right after the screen opens, which
+    // made the first scans fail.
+    await FlutterBluePlus.adapterState
+        .where((s) => s == BluetoothAdapterState.on)
+        .first
+        .timeout(const Duration(seconds: 5));
+    var stopping = false;
     _scanSub = FlutterBluePlus.onScanResults.listen((results) {
+      // The scan is already filtered by the setup service id. The name can
+      // arrive later in the scan response, so don't drop a result without
+      // one; the latest result for a device replaces the earlier one.
       for (final result in results) {
-        final name = result.advertisementData.advName;
-        if (name.startsWith('Authentic SC-1 ')) {
-          _devices[result.device.remoteId.str] = result;
-        }
+        _devices[result.device.remoteId.str] = result;
+      }
+      // Found one: give others a moment to show up, then stop early.
+      if (_devices.isNotEmpty && !stopping) {
+        stopping = true;
+        Future<void>.delayed(
+          const Duration(seconds: 1),
+          () => FlutterBluePlus.stopScan(),
+        );
       }
     });
+    // startScan returns as soon as the scan has started, so wait for it to
+    // finish before reading the results.
     await FlutterBluePlus.startScan(
       withServices: [Guid(serviceId)],
       timeout: timeout,
       androidUsesFineLocation: Platform.isAndroid,
     );
+    await FlutterBluePlus.isScanning.where((scanning) => !scanning).first;
     await _scanSub?.cancel();
     _scanSub = null;
   }
@@ -105,7 +132,11 @@ class Sc1BleSetup {
     info = Map<String, dynamic>.from(
       jsonDecode(utf8.decode(await _info!.read())) as Map,
     );
-    _codeAccepted = info?['code_required'] == false;
+    // The screen asks for the code exactly when the SC-1 says it is
+    // required, so anything else counts as "nothing to enter". (Treating a
+    // missing flag as "not accepted" left such a unit stuck on the
+    // enter-the-code screen.)
+    _codeAccepted = info?['code_required'] != true;
     _connectionSub = _device!.connectionState.listen((state) {
       if (state == BluetoothConnectionState.disconnected) {
         statusEvents.add(const Sc1WifiStatus('disconnected', null, null, null));
@@ -158,10 +189,27 @@ class Sc1BleSetup {
 
   bool get codeAccepted => _codeAccepted;
 
+  /// The code as the SC-1 expects it: the label may print it as "1234 5678"
+  /// or "1234-5678", but only the characters themselves are sent.
+  static String normalizeSetupCode(String typed) =>
+      typed.replaceAll(RegExp(r'[\s\-]'), '');
+
+  /// Sends the setup code from the SC-1's label. The code is never logged
+  /// or kept.
   Future<void> writeSetupCode(String code) async {
+    final characteristic = _setupCode;
+    if (characteristic == null) {
+      // An SC-1 without the setup-code characteristic can't be unlocked.
+      throw Sc1BleWriteException(
+        null,
+        StateError('SC-1 setup code characteristic is missing.'),
+        null,
+        info,
+      );
+    }
     try {
-      await _setupCode!.write(
-        utf8.encode(jsonEncode({'code': code})),
+      await characteristic.write(
+        utf8.encode(jsonEncode({'code': normalizeSetupCode(code)})),
         withoutResponse: false,
       );
       _codeAccepted = true;

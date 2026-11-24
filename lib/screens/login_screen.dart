@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import 'server_setup_screen.dart';
 import '../logic/app_state.dart';
 import '../config/session.dart';
+import 'change_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -19,40 +20,58 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _executeLogin() async {
     final u = _usernameCtrl.text.trim();
-    final p = _passwordCtrl.text.trim();
+    // Passwords are taken exactly as typed.
+    final p = _passwordCtrl.text;
 
     if (u.isEmpty || p.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter credentials.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter credentials.')),
+      );
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // Evaluate credentials against the active RBAC engine
-    try {
-      final matchedUser = AppState.instance.users.firstWhere(
-        (user) => user.username == u && user.password == p,
+    var user = AppState.instance.userNamed(u);
+    if (user == null || !user.checkPassword(p)) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid username or password.'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
+      return;
+    }
 
-      if (_rememberMe) {
-        await Session.remember(matchedUser.username);
-      } else {
-        await Session.forget();
-      }
-
-      // Launch application with retrieved security privileges
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => ServerSetupScreen(isAdmin: matchedUser.role == 'Admin')),
-        );
-      }
-    } catch (_) {
-      // Catch StateError when firstWhere fails to locate credentials
-      if (mounted) {
+    // The default password, or one an admin set, must be replaced first.
+    if (user.mustChangePassword) {
+      final changed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => ChangePasswordScreen(user: user!)),
+      );
+      if (!mounted) return;
+      if (changed != true) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid username or password.'), backgroundColor: Colors.redAccent));
+        _passwordCtrl.clear();
+        return;
       }
+      user = AppState.instance.userNamed(u)!;
+    }
+
+    if (_rememberMe) {
+      await Session.remember(user.username);
+    } else {
+      await Session.forget();
+    }
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ServerSetupScreen(isAdmin: user!.isAdmin),
+        ),
+      );
     }
   }
 
@@ -77,7 +96,11 @@ class _LoginScreenState extends State<LoginScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Color(0xAA000000), AppTheme.backgroundLight],
+                colors: [
+                  Colors.transparent,
+                  Color(0xAA000000),
+                  AppTheme.backgroundLight,
+                ],
                 stops: [0.0, 0.7, 1.0],
               ),
             ),
@@ -85,7 +108,10 @@ class _LoginScreenState extends State<LoginScreen> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 48,
+                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -100,9 +126,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       'Authenticate for Control.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w400,
-                          ),
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
                     const SizedBox(height: 64),
                     // Credential Fields
@@ -122,7 +148,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             decoration: const InputDecoration(
                               labelText: 'Username',
                               labelStyle: TextStyle(color: Colors.grey),
-                              prefixIcon: Icon(Icons.person_outline, color: Colors.white54),
+                              prefixIcon: Icon(
+                                Icons.person_outline,
+                                color: Colors.white54,
+                              ),
                               border: InputBorder.none,
                             ),
                           ),
@@ -134,25 +163,39 @@ class _LoginScreenState extends State<LoginScreen> {
                             decoration: const InputDecoration(
                               labelText: 'Password',
                               labelStyle: TextStyle(color: Colors.grey),
-                              prefixIcon: Icon(Icons.lock_outline, color: Colors.white54),
+                              prefixIcon: Icon(
+                                Icons.lock_outline,
+                                color: Colors.white54,
+                              ),
                               border: InputBorder.none,
                             ),
                           ),
                           const SizedBox(height: 12),
                           GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTap: () => setState(() => _rememberMe = !_rememberMe),
+                            onTap:
+                                () =>
+                                    setState(() => _rememberMe = !_rememberMe),
                             child: Row(
                               children: [
                                 Checkbox(
                                   value: _rememberMe,
-                                  onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                                  onChanged:
+                                      (v) => setState(
+                                        () => _rememberMe = v ?? false,
+                                      ),
                                   activeColor: AppTheme.accentWhite,
                                   checkColor: Colors.black,
                                   side: const BorderSide(color: Colors.white54),
                                 ),
                                 const Flexible(
-                                  child: Text('Remember me', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                                  child: Text(
+                                    'Remember me',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 14,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -166,11 +209,27 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.accentWhite,
                                 foregroundColor: Colors.black,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
-                              child: _isLoading 
-                                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
-                                  : const Text('Access Matrix', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              child:
+                                  _isLoading
+                                      ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.black,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                      : const Text(
+                                        'Access Matrix',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
                             ),
                           ),
                         ],

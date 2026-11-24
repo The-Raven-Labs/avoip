@@ -58,7 +58,7 @@ void main() {
       await tester.runAsync(() async {
         await startServer(sendJpeg);
         await tester.pumpWidget(tile(PolledPreview(url: url('/preview.jpg'))));
-        await Future<void>.delayed(const Duration(milliseconds: 1500));
+        await Future<void>.delayed(const Duration(milliseconds: 2600));
       });
       await tester.pump();
       expect(find.byType(RawImage), findsOneWidget);
@@ -80,7 +80,7 @@ void main() {
           await req.response.close();
         });
         await tester.pumpWidget(tile(PolledPreview(url: url('/preview.jpg'))));
-        await Future<void>.delayed(const Duration(milliseconds: 1600));
+        await Future<void>.delayed(const Duration(milliseconds: 2600));
       });
       await tester.pump();
       expect(calls, greaterThanOrEqualTo(2));

@@ -11,6 +11,18 @@ import '../config/api_config.dart';
 // Using global DeviceType from models/device_model.dart
 enum AdoptStatus { pending, adopting, adopted }
 
+/// What to tell the installer when the SC-1 lists no Tx/Rx. The SC-1 finds
+/// the boxes over the cable, not over the phone's Wi-Fi.
+const String noDevicesHint =
+    "The SC-1 can't see any Tx/Rx yet. Check the boxes and the SC-1 are on "
+    'the same switch and powered on. After a power cut, boxes can take about '
+    'a minute to appear.';
+
+/// When the phone can't reach the SC-1 at all, that is the first thing to fix.
+const String controllerUnreachableHint =
+    "Can't reach the SC-1. Check this phone is on the SC-1's Wi-Fi (or the "
+    'same network as the SC-1), then try again.';
+
 class DiscoveredDevice {
   // The controller's id for this box (stable, derived from its MAC).
   final String? controllerId;
@@ -26,6 +38,9 @@ class DiscoveredDevice {
   final String? currentTxIp;
   // Controller-managed TX channel; null until the controller has read it.
   final String? channel;
+  // What an RX says it is routed to: a channel ("0032") or, if it is still
+  // routed the old way, a TX IP. Null for a TX.
+  final String? selected;
   AdoptStatus status;
 
   DiscoveredDevice({
@@ -39,6 +54,7 @@ class DiscoveredDevice {
     this.streamUrl,
     this.currentTxIp,
     this.channel,
+    this.selected,
     this.status = AdoptStatus.pending,
   });
 }
@@ -206,11 +222,12 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
   void _startScan() async {
     setState(() {
       _isScanning = true;
-      _scanStatus = 'Scanning the network...';
+      _scanStatus = 'Searching for devices...';
     });
 
     // Ask the controller to look for new boxes, then list all it knows.
-    // The list still loads if the scan request itself fails.
+    // After a network change the first scan can take about 20 s while the
+    // SC-1 finds the boxes itself. The list still loads if the scan fails.
     final scanError = await DeviceApiService.triggerScan();
     if (!mounted) return;
     setState(() => _scanStatus = 'Loading devices...');
@@ -231,8 +248,9 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Network scan failed ($scanError). Showing the devices the '
-            'controller already knows.',
+            // 502 scan_failed: the SC-1 couldn't find any box.
+            '${scanError.startsWith('scan_failed') ? 'The SC-1 found no devices on its network' : 'Network scan failed ($scanError)'}. '
+            'Showing the devices it already knows.',
           ),
           backgroundColor: Colors.orangeAccent,
           behavior: SnackBarBehavior.floating,
@@ -310,7 +328,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                 const SizedBox(height: 8),
                 if (found.isEmpty)
                   Text(
-                    'The controller found no AV devices.\nCheck the boxes are powered and on the network.',
+                    noDevicesHint,
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
                   )
@@ -461,6 +479,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
         previewUrl: dev.previewUrl,
         streamUrl: dev.streamUrl,
         channel: dev.channel,
+        status: dev.signal > 0 ? DeviceStatus.online : DeviceStatus.offline,
       );
     }
     AppState.instance.lastAdoptedDeviceId = null;
@@ -498,6 +517,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
       previewUrl: dev.previewUrl,
       streamUrl: dev.streamUrl,
       channel: dev.channel,
+      status: dev.signal > 0 ? DeviceStatus.online : DeviceStatus.offline,
     );
     // Devices listed from the last saved scan carry no URLs yet.
     if (dev.previewUrl == null) {
@@ -797,7 +817,10 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'No Devices Found',
+                      // Devices may exist that the TX/RX/CX filter hides.
+                      _devices.isEmpty
+                          ? 'No Devices Found'
+                          : 'No $_filterType devices',
                       style: TextStyle(
                         color: Colors.grey.shade400,
                         fontSize: 16,
@@ -806,7 +829,11 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Make sure your phone is on the\nsame WiFi as your AV devices.',
+                      _devices.isNotEmpty
+                          ? 'Choose another filter to see the other devices.'
+                          : _controllerError != null
+                          ? controllerUnreachableHint
+                          : noDevicesHint,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.grey.shade600,
@@ -1004,7 +1031,9 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
     final isAdopted = dev.status == AdoptStatus.adopted;
     final isAdopting = dev.status == AdoptStatus.adopting;
     // An adopted box the controller reports offline needs attention.
-    final isOffline = isAdopted && dev.signal == 0;
+    // A scan saved on this phone says nothing about right now.
+    final unverified = _showingSavedScan;
+    final isOffline = isAdopted && !unverified && dev.signal == 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1177,17 +1206,25 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                         Icons.circle,
                         size: 8,
                         color:
-                            dev.signal > 0
+                            unverified
+                                ? Colors.grey
+                                : dev.signal > 0
                                 ? Colors.greenAccent
                                 : Colors.redAccent,
                       ),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          dev.signal > 0 ? 'Online' : 'Offline',
+                          unverified
+                              ? 'Checking...'
+                              : dev.signal > 0
+                              ? 'Online'
+                              : 'Offline',
                           style: TextStyle(
                             color:
-                                dev.signal > 0
+                                unverified
+                                    ? Colors.grey
+                                    : dev.signal > 0
                                     ? Colors.greenAccent
                                     : Colors.redAccent,
                             fontSize: 12,
