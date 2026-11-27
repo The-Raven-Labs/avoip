@@ -62,14 +62,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     },
     {
       'id': AppTabs.users,
-      'icon': Icons.admin_panel_settings_outlined,
+      'icon': Icons.people_outline_rounded,
       'label': 'User Management',
       'adminOnly': true,
       'module': const UsersModule(),
     },
     {
       'id': AppTabs.utilities,
-      'icon': Icons.monitor_heart_outlined,
+      'icon': Icons.layers_outlined,
       'label': 'Utilities',
       'adminOnly': true,
       'module': const UtilitiesModule(),
@@ -77,7 +77,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     {
       'id': AppTabs.help,
       'icon': Icons.help_outline,
-      'label': 'Help',
+      'label': 'Help & Support',
       'module': const HelpModule(),
     },
   ];
@@ -289,8 +289,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       backgroundColor: AppTheme.backgroundLight,
       appBar: AppBar(
         toolbarHeight: isMobile ? 60 : 70,
-        backgroundColor:
-            AppTheme.backgroundLight, // Sleek Pitch Black Apple TV Header
+        backgroundColor: AppTheme.backgroundLight,
         elevation: 0,
         title: Row(
           children: [
@@ -307,7 +306,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                         'Authentic AV',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.grey.shade500,
+                          color: AppTheme.brandTextMuted,
                           fontWeight: FontWeight.w500,
                           letterSpacing: 0.5,
                         ),
@@ -315,7 +314,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       Icon(
                         Icons.chevron_right_rounded,
                         size: 12,
-                        color: Colors.grey.shade600,
+                        color: AppTheme.brandTextMuted,
                       ),
                     ],
                   ),
@@ -390,58 +389,63 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade900,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.grey.shade800,
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+                    Row(
+                      children: [
+                        Container(
+                          width: 82,
+                          height: 82,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.brandCard,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppTheme.brandBorder),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x14111827),
+                                blurRadius: 12,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: const Image(
-                        image: AssetImage(
-                          'assets/images/auth.av_purple-white.png',
+                          child: const Image(
+                            image: AssetImage(
+                              'assets/images/auth.av_icon_v2.png',
+                            ),
+                            fit: BoxFit.contain,
+                          ),
                         ),
-                        height: 60,
-                        width: 60,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Authentic AV',
-                      style: TextStyle(
-                        color: AppTheme.accentWhite,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'New York',
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'EXPERIENCE CONTROL',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: AppTheme.textMuted,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 2.5,
-                      ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Authentic AV',
+                                style: TextStyle(
+                                  color: AppTheme.brandTextPrimary,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'E X P E R I E N C E   C O N T R O L',
+                                style: TextStyle(
+                                  color: AppTheme.brandTextMuted,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
-            Divider(color: Colors.grey.shade900, height: 1),
+            const Divider(color: AppTheme.brandBorder, height: 1),
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -476,7 +480,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       ),
                     ),
                     selected: isSelected,
-                    selectedTileColor: AppTheme.highlightGrey,
+                    selectedTileColor: AppTheme.brandPrimarySoft,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),

@@ -50,9 +50,10 @@ class _OperateModuleState extends State<OperateModule> {
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.all(isMobile ? 12 : 20),
-                child: _isSourcesView 
-                  ? _buildSourcesList(isMobile)
-                  : _buildDestinationsList(isMobile),
+                child:
+                    _isSourcesView
+                        ? _buildSourcesList(isMobile)
+                        : _buildDestinationsList(isMobile),
               ),
             ),
           ],
@@ -69,11 +70,7 @@ class _OperateModuleState extends State<OperateModule> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children:
           _destinationsByLocation.entries.map((entry) {
-            return _buildLocationGroup(
-              entry.key,
-              entry.value,
-              isMobile,
-            );
+            return _buildLocationGroup(entry.key, entry.value, isMobile);
           }).toList(),
     );
   }
@@ -98,7 +95,11 @@ class _OperateModuleState extends State<OperateModule> {
       children: [
         const Text(
           'Active Transmitters',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white70),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.brandTextPrimary,
+          ),
         ),
         const SizedBox(height: 16),
         GridView.builder(
@@ -113,8 +114,9 @@ class _OperateModuleState extends State<OperateModule> {
           itemCount: _sources.length,
           itemBuilder: (context, index) {
             final source = _sources[index];
-            final routedCount = _activeRoutes.values.where((v) => v == source.id).length;
-            
+            final routedCount =
+                _activeRoutes.values.where((v) => v == source.id).length;
+
             return InkWell(
               onTap: () => showDisplayPicker(context, source),
               borderRadius: BorderRadius.circular(16),
@@ -123,7 +125,7 @@ class _OperateModuleState extends State<OperateModule> {
                 decoration: BoxDecoration(
                   color: AppTheme.highlightGrey,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white12),
+                  border: Border.all(color: AppTheme.brandBorder),
                 ),
                 child: Row(
                   children: [
@@ -146,10 +148,13 @@ class _OperateModuleState extends State<OperateModule> {
                         width: 48,
                         height: 48,
                         decoration: BoxDecoration(
-                          color: Colors.purpleAccent.withValues(alpha: 0.1),
+                          color: AppTheme.brandPrimarySoft,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.cast_rounded, color: Colors.purpleAccent),
+                        child: const Icon(
+                          Icons.cast_rounded,
+                          color: AppTheme.brandPrimary,
+                        ),
                       ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -157,21 +162,42 @@ class _OperateModuleState extends State<OperateModule> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(source.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                          Text(source.ip, style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
+                          Text(
+                            source.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.brandTextPrimary,
+                            ),
+                          ),
+                          Text(
+                            source.ip,
+                            style: TextStyle(
+                              color: AppTheme.brandTextMuted,
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
-                        color: routedCount > 0 ? Colors.greenAccent.withValues(alpha: 0.1) : Colors.grey.shade900,
+                        color:
+                            routedCount > 0
+                                ? AppTheme.brandSuccessBackground
+                                : AppTheme.brandBackgroundSecondary,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         '$routedCount Active',
                         style: TextStyle(
-                          color: routedCount > 0 ? Colors.greenAccent : Colors.grey,
+                          color:
+                              routedCount > 0
+                                  ? AppTheme.brandSuccess
+                                  : AppTheme.brandTextMuted,
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
@@ -192,7 +218,7 @@ class _OperateModuleState extends State<OperateModule> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: AppTheme.backgroundLight,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade900)),
+        border: const Border(bottom: BorderSide(color: AppTheme.brandBorder)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -204,19 +230,28 @@ class _OperateModuleState extends State<OperateModule> {
                   children: [
                     const Text(
                       'Operate',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.brandTextPrimary,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade900,
+                        color: AppTheme.brandPrimarySoft,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        _isSourcesView ? '${_sources.length} Src' : '${_allDestinations.length} Disp',
+                        _isSourcesView
+                            ? '${_sources.length} Src'
+                            : '${_allDestinations.length} Disp',
                         style: TextStyle(
-                          color: Colors.grey.shade400,
+                          color: AppTheme.brandPrimary,
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),
@@ -227,9 +262,18 @@ class _OperateModuleState extends State<OperateModule> {
               ),
               IconButton(
                 onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SnapshotsModule(showAppBar: true)));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SnapshotsModule(showAppBar: true),
+                    ),
+                  );
                 },
-                icon: const Icon(Icons.auto_awesome_motion_rounded, color: Colors.amberAccent, size: 20),
+                icon: const Icon(
+                  Icons.auto_awesome_motion_rounded,
+                  color: AppTheme.brandPrimary,
+                  size: 20,
+                ),
                 tooltip: 'Snapshots',
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -274,8 +318,18 @@ class _OperateModuleState extends State<OperateModule> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _viewModeToggleCap('_isSourcesView', false, isMobile ? 'D' : 'Displays', Icons.monitor),
-          _viewModeToggleCap('_isSourcesView', true, isMobile ? 'S' : 'Sources', Icons.cast),
+          _viewModeToggleCap(
+            '_isSourcesView',
+            false,
+            isMobile ? 'D' : 'Displays',
+            Icons.monitor,
+          ),
+          _viewModeToggleCap(
+            '_isSourcesView',
+            true,
+            isMobile ? 'S' : 'Sources',
+            Icons.cast,
+          ),
         ],
       ),
     );
@@ -286,15 +340,15 @@ class _OperateModuleState extends State<OperateModule> {
       decoration: BoxDecoration(
         color: AppTheme.highlightGrey,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade800),
+        border: Border.all(color: AppTheme.brandBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _viewModeCapsule(ViewMode.largeGrid, Icons.grid_view_rounded),
-          Container(width: 1, height: 16, color: Colors.grey.shade800),
+          Container(width: 1, height: 16, color: AppTheme.brandBorder),
           _viewModeCapsule(ViewMode.compactGrid, Icons.grid_on_rounded),
-          Container(width: 1, height: 16, color: Colors.grey.shade800),
+          Container(width: 1, height: 16, color: AppTheme.brandBorder),
           _viewModeCapsule(ViewMode.list, Icons.view_list_rounded),
         ],
       ),
@@ -350,7 +404,8 @@ class _OperateModuleState extends State<OperateModule> {
       return;
     }
     snapshots.sort(
-      (a, b) => (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0)),
+      (a, b) =>
+          (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0)),
     );
     await recallSnapshot(messenger, snapshots.last);
   }
@@ -361,7 +416,11 @@ class _OperateModuleState extends State<OperateModule> {
       children: [
         IconButton(
           onPressed: _quickSave,
-          icon: const Icon(Icons.save_outlined, color: Colors.greenAccent, size: 20),
+          icon: const Icon(
+            Icons.save_outlined,
+            color: Colors.greenAccent,
+            size: 20,
+          ),
           tooltip: 'Quick Save State',
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -369,7 +428,11 @@ class _OperateModuleState extends State<OperateModule> {
         const SizedBox(width: 8),
         IconButton(
           onPressed: _recallLatest,
-          icon: const Icon(Icons.history_rounded, color: Colors.blueAccent, size: 20),
+          icon: const Icon(
+            Icons.history_rounded,
+            color: Colors.blueAccent,
+            size: 20,
+          ),
           tooltip: 'Recall Last',
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
@@ -378,7 +441,12 @@ class _OperateModuleState extends State<OperateModule> {
     );
   }
 
-  Widget _viewModeToggleCap(String property, bool value, String label, IconData icon) {
+  Widget _viewModeToggleCap(
+    String property,
+    bool value,
+    String label,
+    IconData icon,
+  ) {
     final isSelected = _isSourcesView == value;
     return InkWell(
       onTap: () => setState(() => _isSourcesView = value),
@@ -386,14 +454,25 @@ class _OperateModuleState extends State<OperateModule> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.grey.shade800 : Colors.transparent,
+          color: isSelected ? AppTheme.brandPrimary : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 14, color: isSelected ? Colors.white : Colors.grey),
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? Colors.white : AppTheme.brandTextMuted,
+            ),
             const SizedBox(width: 6),
-            Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.grey, fontSize: 11, fontWeight: FontWeight.bold)),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : AppTheme.brandTextMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),
@@ -408,13 +487,13 @@ class _OperateModuleState extends State<OperateModule> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.grey.shade800 : Colors.transparent,
+          color: isSelected ? AppTheme.brandPrimary : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(
           icon,
           size: 18,
-          color: isSelected ? AppTheme.accentWhite : Colors.grey.shade600,
+          color: isSelected ? Colors.white : AppTheme.brandTextMuted,
         ),
       ),
     );
@@ -432,7 +511,7 @@ class _OperateModuleState extends State<OperateModule> {
       decoration: BoxDecoration(
         color: AppTheme.highlightGrey,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade800),
+        border: Border.all(color: AppTheme.brandBorder),
       ),
       child: Column(
         children: [
@@ -463,14 +542,14 @@ class _OperateModuleState extends State<OperateModule> {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
+                      color: AppTheme.brandPrimarySoft,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       '${devices.length} display${devices.length == 1 ? '' : 's'}',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.grey.shade700,
+                        color: AppTheme.brandPrimary,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -480,7 +559,7 @@ class _OperateModuleState extends State<OperateModule> {
                     isExpanded
                         ? Icons.keyboard_arrow_up
                         : Icons.keyboard_arrow_down,
-                    color: Colors.grey,
+                    color: AppTheme.brandTextMuted,
                   ),
                 ],
               ),
@@ -817,35 +896,45 @@ class _OperateModuleState extends State<OperateModule> {
   void _showDeleteDeviceDialog(Device dest) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey.shade900,
-        title: const Text('Remove Display', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'Are you sure you want to remove "${dest.name}" from ${dest.location}?',
-          style: TextStyle(color: Colors.grey.shade300),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: Colors.grey.shade900,
+            title: const Text(
+              'Remove Display',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: Text(
+              'Are you sure you want to remove "${dest.name}" from ${dest.location}?',
+              style: TextStyle(color: Colors.grey.shade300),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  if (_selectedDestinationId == dest.id) {
+                    setState(() => _selectedDestinationId = null);
+                  }
+                  await AppState.instance.removeDevice(dest.id, dest.location);
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Removed ${dest.name}')),
+                    );
+                  }
+                },
+                child: const Text(
+                  'Remove',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () async {
-              if (_selectedDestinationId == dest.id) {
-                setState(() => _selectedDestinationId = null);
-              }
-              await AppState.instance.removeDevice(dest.id, dest.location);
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Removed ${dest.name}')),
-                );
-              }
-            },
-            child: const Text('Remove', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
     );
   }
 
@@ -931,7 +1020,11 @@ class _OperateModuleState extends State<OperateModule> {
       color: Colors.black.withValues(alpha: 0.7),
       shape: const CircleBorder(),
       child: IconButton(
-        icon: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 18),
+        icon: const Icon(
+          Icons.fullscreen_rounded,
+          color: Colors.white,
+          size: 18,
+        ),
         tooltip: 'Full screen live view',
         padding: const EdgeInsets.all(4),
         constraints: const BoxConstraints(),
