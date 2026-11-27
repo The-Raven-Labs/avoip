@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/device_model.dart';
+import '../logic/app_state.dart' show UserAccount;
 
 class DatabaseService {
   static final DatabaseService instance = DatabaseService._internal();
@@ -19,9 +20,28 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // v2: login accounts are saved (they used to live only in memory).
+    if (oldVersion < 2) await _createUsersTable(db);
+  }
+
+  Future<void> _createUsersTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        must_change_password INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -63,6 +83,54 @@ class DatabaseService {
         value TEXT NOT NULL
       )
     ''');
+
+    await _createUsersTable(db);
+  }
+
+  /// Forgets every adopted device, route and saved scan (after an SC-1
+  /// factory reset). Login accounts and settings stay.
+  Future<void> clearDeviceData() async {
+    final db = await database;
+    final batch = db.batch();
+    batch.delete('adopted_devices');
+    batch.delete('active_routes');
+    batch.delete('discovered_devices');
+    await batch.commit(noResult: true);
+  }
+
+  // ── Users ─────────────────────────────────────────────────────────────────
+
+  Future<List<UserAccount>> loadUsers() async {
+    final db = await database;
+    final rows = await db.query('users');
+    return [
+      for (final row in rows)
+        UserAccount(
+          id: row['id'] as String,
+          username: row['username'] as String,
+          role: row['role'] as String,
+          passwordHash: row['password_hash'] as String,
+          salt: row['salt'] as String,
+          mustChangePassword: (row['must_change_password'] as int) == 1,
+        ),
+    ];
+  }
+
+  Future<void> saveUser(UserAccount user) async {
+    final db = await database;
+    await db.insert('users', {
+      'id': user.id,
+      'username': user.username,
+      'role': user.role,
+      'password_hash': user.passwordHash,
+      'salt': user.salt,
+      'must_change_password': user.mustChangePassword ? 1 : 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteUser(String id) async {
+    final db = await database;
+    await db.delete('users', where: 'id = ?', whereArgs: [id]);
   }
 
   // ── Discovered Devices ────────────────────────────────────────────────────

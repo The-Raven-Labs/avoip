@@ -41,6 +41,7 @@ dependencies:
   bonsoir: ^7.1.5
   flutter_blue_plus: ^2.3.14
   connectivity_plus: ^6.1.5
+  crypto: ^3.0.8
 
 dev_dependencies:
   flutter_test:

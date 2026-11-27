@@ -11,6 +11,18 @@ import '../config/api_config.dart';
 // Using global DeviceType from models/device_model.dart
 enum AdoptStatus { pending, adopting, adopted }
 
+/// What to tell the installer when the SC-1 lists no Tx/Rx. The SC-1 finds
+/// the boxes over the cable, not over the phone's Wi-Fi.
+const String noDevicesHint =
+    "The SC-1 can't see any Tx/Rx yet. Check the boxes and the SC-1 are on "
+    'the same switch and powered on. After a power cut, boxes can take about '
+    'a minute to appear.';
+
+/// When the phone can't reach the SC-1 at all, that is the first thing to fix.
+const String controllerUnreachableHint =
+    "Can't reach the SC-1. Check this phone is on the SC-1's Wi-Fi (or the "
+    'same network as the SC-1), then try again.';
+
 class DiscoveredDevice {
   // The controller's id for this box (stable, derived from its MAC).
   final String? controllerId;
@@ -26,6 +38,9 @@ class DiscoveredDevice {
   final String? currentTxIp;
   // Controller-managed TX channel; null until the controller has read it.
   final String? channel;
+  // What an RX says it is routed to: a channel ("0032") or, if it is still
+  // routed the old way, a TX IP. Null for a TX.
+  final String? selected;
   AdoptStatus status;
 
   DiscoveredDevice({
@@ -39,6 +54,7 @@ class DiscoveredDevice {
     this.streamUrl,
     this.currentTxIp,
     this.channel,
+    this.selected,
     this.status = AdoptStatus.pending,
   });
 }
@@ -206,11 +222,12 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
   void _startScan() async {
     setState(() {
       _isScanning = true;
-      _scanStatus = 'Scanning the network...';
+      _scanStatus = 'Searching for devices...';
     });
 
     // Ask the controller to look for new boxes, then list all it knows.
-    // The list still loads if the scan request itself fails.
+    // After a network change the first scan can take about 20 s while the
+    // SC-1 finds the boxes itself. The list still loads if the scan fails.
     final scanError = await DeviceApiService.triggerScan();
     if (!mounted) return;
     setState(() => _scanStatus = 'Loading devices...');
@@ -231,8 +248,9 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Network scan failed ($scanError). Showing the devices the '
-            'controller already knows.',
+            // 502 scan_failed: the SC-1 couldn't find any box.
+            '${scanError.startsWith('scan_failed') ? 'The SC-1 found no devices on its network' : 'Network scan failed ($scanError)'}. '
+            'Showing the devices it already knows.',
           ),
           backgroundColor: Colors.orangeAccent,
           behavior: SnackBarBehavior.floating,
@@ -310,7 +328,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                 const SizedBox(height: 8),
                 if (found.isEmpty)
                   Text(
-                    'The controller found no AV devices.\nCheck the boxes are powered and on the network.',
+                    noDevicesHint,
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
                   )
@@ -461,6 +479,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
         previewUrl: dev.previewUrl,
         streamUrl: dev.streamUrl,
         channel: dev.channel,
+        status: dev.signal > 0 ? DeviceStatus.online : DeviceStatus.offline,
       );
     }
     AppState.instance.lastAdoptedDeviceId = null;
@@ -498,6 +517,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
       previewUrl: dev.previewUrl,
       streamUrl: dev.streamUrl,
       channel: dev.channel,
+      status: dev.signal > 0 ? DeviceStatus.online : DeviceStatus.offline,
     );
     // Devices listed from the last saved scan carry no URLs yet.
     if (dev.previewUrl == null) {
@@ -548,11 +568,11 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
   Color _typeColor(DeviceType type) {
     switch (type) {
       case DeviceType.rx:
-        return Colors.blueAccent;
+        return AppTheme.brandInfo;
       case DeviceType.tx:
-        return Colors.purpleAccent;
+        return AppTheme.brandPrimary;
       case DeviceType.cx:
-        return Colors.orangeAccent;
+        return AppTheme.brandWarning;
     }
   }
 
@@ -585,7 +605,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
           const SizedBox(height: 4),
           Text(
             'Scan the network for AVoIP hardware',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+            style: TextStyle(color: AppTheme.brandTextMuted, fontSize: 14),
           ),
           const SizedBox(height: 12),
           SizedBox(width: double.infinity, child: _buildScanButton()),
@@ -595,23 +615,21 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.blueAccent.withValues(alpha: 0.08),
+              color: AppTheme.brandPrimarySoft,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: Colors.blueAccent.withValues(alpha: 0.3),
-              ),
+              border: Border.all(color: AppTheme.brandPrimaryLight),
             ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.15),
+                    color: AppTheme.brandPrimaryLight,
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
                     Icons.wifi_rounded,
-                    color: Colors.blueAccent,
+                    color: AppTheme.brandPrimary,
                     size: 18,
                   ),
                 ),
@@ -623,7 +641,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                       Text(
                         'Connect your phone to Wi-Fi',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: AppTheme.brandTextPrimary,
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
@@ -632,7 +650,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                       Text(
                         'Make sure this phone is on the same Wi-Fi as your SC-1 controller.',
                         style: TextStyle(
-                          color: Color(0xFF9E9E9E),
+                          color: AppTheme.brandTextSecondary,
                           fontSize: 11,
                           height: 1.4,
                         ),
@@ -652,21 +670,21 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                 Icons.devices_rounded,
                 total.toString(),
                 'Found',
-                Colors.blue.shade300,
+                AppTheme.brandPrimary,
               ),
               const SizedBox(width: 10),
               _statTile(
                 Icons.check_circle_rounded,
                 adopted.toString(),
                 'Adopted',
-                Colors.greenAccent,
+                AppTheme.brandSuccess,
               ),
               const SizedBox(width: 10),
               _statTile(
                 Icons.pending_rounded,
                 pending.toString(),
                 'Pending',
-                Colors.orangeAccent,
+                AppTheme.brandWarning,
               ),
             ],
           ),
@@ -681,8 +699,8 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                 icon: const Icon(Icons.done_all_rounded, size: 18),
                 label: Text('Adopt all (${_pendingDevices.length})'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.greenAccent,
-                  side: const BorderSide(color: Colors.greenAccent),
+                  foregroundColor: AppTheme.brandSuccess,
+                  side: const BorderSide(color: AppTheme.brandSuccess),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -709,16 +727,19 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                   child: LinearProgressIndicator(
                     value: null, // indeterminate — scanning all IPs at once
                     minHeight: 4,
-                    backgroundColor: Colors.grey.shade800,
+                    backgroundColor: AppTheme.brandBorder,
                     valueColor: const AlwaysStoppedAnimation<Color>(
-                      Colors.greenAccent,
+                      AppTheme.brandPrimary,
                     ),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   _scanStatus.isEmpty ? 'Scanning network...' : _scanStatus,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                  style: TextStyle(
+                    color: AppTheme.brandTextMuted,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -744,14 +765,14 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                           decoration: BoxDecoration(
                             color:
                                 selected
-                                    ? Colors.greenAccent
-                                    : Colors.grey.shade900,
+                                    ? AppTheme.brandPrimary
+                                    : AppTheme.brandCard,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                               color:
                                   selected
-                                      ? Colors.greenAccent
-                                      : Colors.grey.shade800,
+                                      ? AppTheme.brandPrimary
+                                      : AppTheme.brandBorder,
                             ),
                           ),
                           child: Text(
@@ -759,8 +780,8 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                             style: TextStyle(
                               color:
                                   selected
-                                      ? Colors.black
-                                      : Colors.grey.shade400,
+                                      ? Colors.white
+                                      : AppTheme.brandTextSecondary,
                               fontSize: 12,
                               fontWeight:
                                   selected
@@ -786,30 +807,37 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade900,
+                        color: AppTheme.brandPrimarySoft,
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
                         Icons.wifi_find_rounded,
                         size: 40,
-                        color: Colors.grey.shade600,
+                        color: AppTheme.brandPrimary,
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'No Devices Found',
+                      // Devices may exist that the TX/RX/CX filter hides.
+                      _devices.isEmpty
+                          ? 'No Devices Found'
+                          : 'No $_filterType devices',
                       style: TextStyle(
-                        color: Colors.grey.shade400,
+                        color: AppTheme.brandTextPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Make sure your phone is on the\nsame WiFi as your AV devices.',
+                      _devices.isNotEmpty
+                          ? 'Choose another filter to see the other devices.'
+                          : _controllerError != null
+                          ? controllerUnreachableHint
+                          : noDevicesHint,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: Colors.grey.shade600,
+                        color: AppTheme.brandTextMuted,
                         fontSize: 13,
                       ),
                     ),
@@ -822,10 +850,10 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.greenAccent.withValues(alpha: 0.1),
+                          color: AppTheme.brandPrimarySoft,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Colors.greenAccent.withValues(alpha: 0.4),
+                            color: AppTheme.brandPrimary.withValues(alpha: 0.4),
                           ),
                         ),
                         child: const Row(
@@ -833,14 +861,14 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                           children: [
                             Icon(
                               Icons.radar_rounded,
-                              color: Colors.greenAccent,
+                              color: AppTheme.brandPrimary,
                               size: 16,
                             ),
                             SizedBox(width: 8),
                             Text(
                               'Try Again',
                               style: TextStyle(
-                                color: Colors.greenAccent,
+                                color: AppTheme.brandPrimary,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -904,14 +932,14 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: _isScanning ? Colors.grey.shade800 : Colors.greenAccent,
+          color: _isScanning ? AppTheme.brandTextMuted : AppTheme.brandPrimary,
           borderRadius: BorderRadius.circular(14),
           boxShadow:
               _isScanning
                   ? []
                   : [
                     BoxShadow(
-                      color: Colors.greenAccent.withValues(alpha: 0.3),
+                      color: AppTheme.brandPrimary.withValues(alpha: 0.3),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -930,12 +958,12 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                 ),
               )
             else
-              const Icon(Icons.radar_rounded, size: 16, color: Colors.black),
+              const Icon(Icons.radar_rounded, size: 16, color: Colors.white),
             const SizedBox(width: 8),
             Text(
               _isScanning ? 'Scanning...' : 'Start Scan',
               style: TextStyle(
-                color: _isScanning ? Colors.white : Colors.black,
+                color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),
@@ -951,9 +979,9 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
-          color: Colors.grey.shade900,
+          color: AppTheme.brandCard,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade800),
+          border: Border.all(color: AppTheme.brandBorder),
         ),
         child: Column(
           children: [
@@ -971,12 +999,12 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
-                color: Colors.white,
+                color: AppTheme.brandTextPrimary,
               ),
             ),
             Text(
               label,
-              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+              style: TextStyle(fontSize: 11, color: AppTheme.brandTextMuted),
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -1004,7 +1032,9 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
     final isAdopted = dev.status == AdoptStatus.adopted;
     final isAdopting = dev.status == AdoptStatus.adopting;
     // An adopted box the controller reports offline needs attention.
-    final isOffline = isAdopted && dev.signal == 0;
+    // A scan saved on this phone says nothing about right now.
+    final unverified = _showingSavedScan;
+    final isOffline = isAdopted && !unverified && dev.signal == 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1013,17 +1043,17 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
             isOffline
                 ? Color.alphaBlend(
                   Colors.redAccent.withValues(alpha: 0.08),
-                  Colors.grey.shade900,
+                  AppTheme.brandCard,
                 )
-                : Colors.grey.shade900,
+                : AppTheme.brandCard,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color:
               isOffline
                   ? Colors.redAccent
                   : isAdopted
-                  ? Colors.greenAccent.withValues(alpha: 0.5)
-                  : Colors.grey.shade800,
+                  ? AppTheme.brandSuccess.withValues(alpha: 0.5)
+                  : AppTheme.brandBorder,
           width: isAdopted ? 1.5 : 1,
         ),
       ),
@@ -1061,7 +1091,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
-                                color: Colors.white,
+                                color: AppTheme.brandTextPrimary,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -1108,7 +1138,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                           Text(
                             dev.ip,
                             style: TextStyle(
-                              color: Colors.grey.shade500,
+                              color: AppTheme.brandTextMuted,
                               fontSize: 12,
                             ),
                           ),
@@ -1154,13 +1184,16 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                 Icon(
                   Icons.memory_rounded,
                   size: 12,
-                  color: Colors.grey.shade600,
+                  color: AppTheme.brandTextMuted,
                 ),
                 const SizedBox(width: 4),
                 Flexible(
                   child: Text(
                     'MAC: ${dev.mac}',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                    style: TextStyle(
+                      color: AppTheme.brandTextMuted,
+                      fontSize: 12,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -1177,18 +1210,26 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                         Icons.circle,
                         size: 8,
                         color:
-                            dev.signal > 0
-                                ? Colors.greenAccent
+                            unverified
+                                ? AppTheme.brandTextMuted
+                                : dev.signal > 0
+                                ? AppTheme.brandSuccess
                                 : Colors.redAccent,
                       ),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          dev.signal > 0 ? 'Online' : 'Offline',
+                          unverified
+                              ? 'Checking...'
+                              : dev.signal > 0
+                              ? 'Online'
+                              : 'Offline',
                           style: TextStyle(
                             color:
-                                dev.signal > 0
-                                    ? Colors.greenAccent
+                                unverified
+                                    ? AppTheme.brandTextMuted
+                                    : dev.signal > 0
+                                    ? AppTheme.brandSuccess
                                     : Colors.redAccent,
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -1208,13 +1249,13 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                             decoration: BoxDecoration(
                               color: (isOffline
                                       ? Colors.redAccent
-                                      : Colors.greenAccent)
+                                      : AppTheme.brandSuccess)
                                   .withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
                                 color: (isOffline
                                         ? Colors.redAccent
-                                        : Colors.greenAccent)
+                                        : AppTheme.brandSuccess)
                                     .withValues(alpha: 0.4),
                               ),
                             ),
@@ -1225,7 +1266,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                                 color:
                                     isOffline
                                         ? Colors.redAccent
-                                        : Colors.greenAccent,
+                                        : AppTheme.brandSuccess,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1235,9 +1276,9 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                             onPressed:
                                 isAdopting ? null : () => _adoptDevice(dev),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.greenAccent,
-                              foregroundColor: Colors.black,
-                              disabledBackgroundColor: Colors.grey.shade800,
+                              backgroundColor: AppTheme.brandPrimary,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: AppTheme.brandBorder,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                               ),
@@ -1253,7 +1294,7 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
                                       height: 14,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: Colors.black,
+                                        color: Colors.white,
                                       ),
                                     )
                                     : const Text(
@@ -1276,14 +1317,14 @@ class _DiscoveryModuleState extends State<DiscoveryModule>
   Widget _channelBadge(String channel) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
     decoration: BoxDecoration(
-      color: Colors.orangeAccent.withValues(alpha: 0.14),
+      color: AppTheme.brandWarningBackground,
       borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+      border: Border.all(color: AppTheme.brandWarning.withValues(alpha: 0.3)),
     ),
     child: Text(
       'Ch $channel',
       style: const TextStyle(
-        color: Colors.orangeAccent,
+        color: AppTheme.brandWarning,
         fontSize: 10,
         fontWeight: FontWeight.bold,
       ),

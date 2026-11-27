@@ -11,6 +11,7 @@ import '../modules/users_module.dart';
 import '../modules/utilities_module.dart';
 import '../screens/login_screen.dart';
 import '../config/session.dart';
+import '../services/network_binding.dart';
 
 class AppShell extends StatefulWidget {
   final bool isAdmin;
@@ -23,20 +24,62 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   // Controller device ids (and so preview URLs) change when it restarts, so
   // the device list is reloaded on screen open, on resume and on this timer.
-  static const Duration _deviceRefreshInterval = Duration(seconds: 45);
+  // Also the heartbeat that keeps each box's Online/Offline status current.
+  static const Duration _deviceRefreshInterval = Duration(seconds: 10);
 
   int _selectedIndex = 0;
   Timer? _deviceRefreshTimer;
+  StreamSubscription<AppAlert>? _alertSub;
+  bool _retrying = false;
 
   // 'id' is what AppState.currentTab holds (see AppTabs).
   final List<Map<String, dynamic>> _allNavItems = [
-    {'id': AppTabs.discovery, 'icon': Icons.manage_search_outlined, 'label': 'Discovery', 'adminOnly': true, 'module': const DiscoveryModule()},
-    {'id': AppTabs.configuration, 'icon': Icons.settings_outlined, 'label': 'Configuration', 'adminOnly': true, 'module': const ConfigurationModule()},
-    {'id': AppTabs.operate, 'icon': Icons.settings_input_component_outlined, 'label': 'Operate', 'module': const OperateModule()},
-    {'id': AppTabs.snapshots, 'icon': Icons.camera_alt_outlined, 'label': 'Snapshots', 'module': const SnapshotsModule()},
-    {'id': AppTabs.users, 'icon': Icons.admin_panel_settings_outlined, 'label': 'User Management', 'adminOnly': true, 'module': const UsersModule()},
-    {'id': AppTabs.utilities, 'icon': Icons.monitor_heart_outlined, 'label': 'Utilities', 'adminOnly': true, 'module': const UtilitiesModule()},
-    {'id': AppTabs.help, 'icon': Icons.help_outline, 'label': 'Help', 'module': const HelpModule()},
+    {
+      'id': AppTabs.discovery,
+      'icon': Icons.manage_search_outlined,
+      'label': 'Discovery',
+      'adminOnly': true,
+      'module': const DiscoveryModule(),
+    },
+    {
+      'id': AppTabs.configuration,
+      'icon': Icons.settings_outlined,
+      'label': 'Configuration',
+      'adminOnly': true,
+      'module': const ConfigurationModule(),
+    },
+    {
+      'id': AppTabs.operate,
+      'icon': Icons.settings_input_component_outlined,
+      'label': 'Operate',
+      'module': const OperateModule(),
+    },
+    {
+      'id': AppTabs.snapshots,
+      'icon': Icons.camera_alt_outlined,
+      'label': 'Snapshots',
+      'module': const SnapshotsModule(),
+    },
+    {
+      'id': AppTabs.users,
+      'icon': Icons.people_outline_rounded,
+      'label': 'User Management',
+      'adminOnly': true,
+      'module': const UsersModule(),
+    },
+    {
+      'id': AppTabs.utilities,
+      'icon': Icons.layers_outlined,
+      'label': 'Utilities',
+      'adminOnly': true,
+      'module': const UtilitiesModule(),
+    },
+    {
+      'id': AppTabs.help,
+      'icon': Icons.help_outline,
+      'label': 'Help & Support',
+      'module': const HelpModule(),
+    },
   ];
 
   List<Map<String, dynamic>> get _visibleItems =>
@@ -58,21 +101,156 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _selectedIndex = _visibleItems.indexWhere((i) => i['id'] == startTab);
     AppState.instance.currentTab.value = startTab;
     AppState.instance.currentTab.addListener(_syncTabIndex);
-    AppState.instance.refreshDevices();
+    _refreshDevices();
+    _alertSub = AppState.instance.alerts.listen(_showAlert);
     _deviceRefreshTimer = Timer.periodic(_deviceRefreshInterval, (_) {
       if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-        AppState.instance.refreshDevices();
+        _refreshDevices();
       }
     });
   }
 
+  // Android only: keeps the app's traffic on Wi-Fi when that Wi-Fi has no
+  // internet (the SC-1's hotspot). Done before every refresh because the
+  // binding follows one Wi-Fi network, and the phone may have changed it.
+  Future<void> _refreshDevices() async {
+    await NetworkBinding.bindToWifi();
+    await AppState.instance.refreshDevices();
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) AppState.instance.refreshDevices();
+    if (state == AppLifecycleState.resumed) _refreshDevices();
   }
 
   // Tab changes go through the shared notifier so it always matches the
   // visible tab (Discovery uses it to jump to Configuration after adopting).
+  // Alerts about the SC-1 or a box dropping off (or coming back).
+  void _showAlert(AppAlert alert) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        backgroundColor:
+            alert.isError ? Colors.red.shade800 : Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: alert.isError ? 10 : 4),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  alert.isError
+                      ? Icons.warning_amber_rounded
+                      : Icons.check_circle_outline,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    alert.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (alert.detail != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 30, top: 4),
+                child: Text(
+                  alert.detail!,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _retryNow() async {
+    setState(() => _retrying = true);
+    await AppState.instance.refreshDevices(minInterval: Duration.zero);
+    if (mounted) setState(() => _retrying = false);
+  }
+
+  // Shown above every tab while the SC-1 can't be reached.
+  Widget _buildLinkBanner() {
+    return ValueListenableBuilder<ControllerLink>(
+      valueListenable: AppState.instance.controllerLink,
+      builder: (context, link, _) {
+        if (link != ControllerLink.lost) return const SizedBox.shrink();
+        final last = AppState.instance.lastControllerContact;
+        final lastText =
+            last == null
+                ? 'Not reached since the app opened.'
+                : 'Last connected at '
+                    '${last.hour.toString().padLeft(2, '0')}:'
+                    '${last.minute.toString().padLeft(2, '0')}.';
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+          color: Colors.red.shade900,
+          child: Row(
+            children: [
+              const Icon(
+                Icons.cloud_off_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'SC-1 not responding',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '$lastText Devices show as offline.',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _retrying
+                  ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                  : TextButton(
+                    onPressed: _retryNow,
+                    style: TextButton.styleFrom(foregroundColor: Colors.white),
+                    child: const Text('Retry'),
+                  ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _selectTab(int index) {
     AppState.instance.currentTab.value = _visibleItems[index]['id'] as String;
   }
@@ -91,7 +269,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _deviceRefreshTimer?.cancel();
+    _alertSub?.cancel();
     AppState.instance.currentTab.removeListener(_syncTabIndex);
+    // Leaving the controller (logout): let Android choose networks again.
+    NetworkBinding.release();
     super.dispose();
   }
 
@@ -108,7 +289,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       backgroundColor: AppTheme.backgroundLight,
       appBar: AppBar(
         toolbarHeight: isMobile ? 60 : 70,
-        backgroundColor: AppTheme.backgroundLight, // Sleek Pitch Black Apple TV Header
+        backgroundColor: AppTheme.backgroundLight,
         elevation: 0,
         title: Row(
           children: [
@@ -123,14 +304,27 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                     children: [
                       Text(
                         'Authentic AV',
-                        style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w500, letterSpacing: 0.5),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.brandTextMuted,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.5,
+                        ),
                       ),
-                      Icon(Icons.chevron_right_rounded, size: 12, color: Colors.grey.shade600),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 12,
+                        color: AppTheme.brandTextMuted,
+                      ),
                     ],
                   ),
                   Text(
                     visibleItems[_selectedIndex]['label'],
-                    style: const TextStyle(fontSize: 17, color: AppTheme.accentWhite, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 17,
+                      color: AppTheme.accentWhite,
+                      fontWeight: FontWeight.bold,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -143,7 +337,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                widget.isAdmin ? Icons.admin_panel_settings_outlined : Icons.person_outline,
+                widget.isAdmin
+                    ? Icons.admin_panel_settings_outlined
+                    : Icons.person_outline,
                 color: AppTheme.accentWhite,
                 size: 18,
               ),
@@ -160,14 +356,20 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               ],
               const SizedBox(width: 12),
               IconButton(
-                icon: const Icon(Icons.logout_outlined, color: AppTheme.accentWhite, size: 20),
+                icon: const Icon(
+                  Icons.logout_outlined,
+                  color: AppTheme.accentWhite,
+                  size: 20,
+                ),
                 tooltip: 'Logout',
                 onPressed: () {
                   // Logging out also ends "Remember me".
                   Session.forget();
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(
+                      builder: (context) => const LoginScreen(),
+                    ),
                   );
                 },
               ),
@@ -187,53 +389,63 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade900,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.grey.shade800, width: 1),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+                    Row(
+                      children: [
+                        Container(
+                          width: 82,
+                          height: 82,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.brandCard,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppTheme.brandBorder),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x14111827),
+                                blurRadius: 12,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: const Image(
-                        image: AssetImage('assets/images/auth.av_purple-white.png'),
-                        height: 60,
-                        width: 60,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Authentic AV',
-                      style: TextStyle(
-                        color: AppTheme.accentWhite,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'New York',
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'EXPERIENCE CONTROL',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: AppTheme.textMuted,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 2.5,
-                      ),
+                          child: const Image(
+                            image: AssetImage(
+                              'assets/images/auth.av_icon_v2.png',
+                            ),
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Authentic AV',
+                                style: TextStyle(
+                                  color: AppTheme.brandTextPrimary,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'E X P E R I E N C E   C O N T R O L',
+                                style: TextStyle(
+                                  color: AppTheme.brandTextMuted,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
-            Divider(color: Colors.grey.shade900, height: 1),
+            const Divider(color: AppTheme.brandBorder, height: 1),
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -242,24 +454,36 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   final item = visibleItems[index];
                   final isSelected = _selectedIndex == index;
                   return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 0,
+                    ),
                     dense: true,
                     leading: Icon(
                       item['icon'] as IconData,
                       size: 20,
-                      color: isSelected ? AppTheme.accentWhite : AppTheme.textMuted,
+                      color:
+                          isSelected
+                              ? AppTheme.accentWhite
+                              : AppTheme.textMuted,
                     ),
                     title: Text(
                       item['label'] as String,
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                        color: isSelected ? AppTheme.accentWhite : AppTheme.textMuted,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.w400,
+                        color:
+                            isSelected
+                                ? AppTheme.accentWhite
+                                : AppTheme.textMuted,
                       ),
                     ),
                     selected: isSelected,
-                    selectedTileColor: AppTheme.highlightGrey,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    selectedTileColor: AppTheme.brandPrimarySoft,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     style: ListTileStyle.drawer,
                     onTap: () {
                       _selectTab(index);
@@ -272,15 +496,23 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ],
         ),
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
+      body: Column(
         children: [
-          // Hidden tabs keep their state but stop tickers and preview polling.
-          for (int i = 0; i < visibleItems.length; i++)
-            TickerMode(
-              enabled: i == _selectedIndex,
-              child: visibleItems[i]['module'] as Widget,
+          _buildLinkBanner(),
+          Expanded(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                // Hidden tabs keep their state but stop tickers and preview
+                // polling.
+                for (int i = 0; i < visibleItems.length; i++)
+                  TickerMode(
+                    enabled: i == _selectedIndex,
+                    child: visibleItems[i]['module'] as Widget,
+                  ),
+              ],
             ),
+          ),
         ],
       ),
     );

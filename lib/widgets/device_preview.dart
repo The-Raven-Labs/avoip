@@ -21,6 +21,9 @@ class PolledPreview extends StatefulWidget {
   // Drawn over the frame but under the badge, e.g. a gradient for text.
   final Widget? overlay;
   final AlignmentGeometry badgeAlignment;
+  // The controller reports this box as offline (no power or no network).
+  // Its last frame is then stale, so a "no power" state is shown instead.
+  final bool deviceOffline;
 
   const PolledPreview({
     super.key,
@@ -28,6 +31,7 @@ class PolledPreview extends StatefulWidget {
     this.fit = BoxFit.cover,
     this.overlay,
     this.badgeAlignment = Alignment.topRight,
+    this.deviceOffline = false,
   });
 
   @override
@@ -100,7 +104,7 @@ class _PolledPreviewState extends State<PolledPreview> with _JpegFrameDisplay {
   }
 
   Future<void> _poll() async {
-    if (!mounted || _inFlight || !_isVisible) return;
+    if (!mounted || _inFlight || widget.deviceOffline || !_isVisible) return;
     _inFlight = true;
     final url = widget.url;
     var shown = false;
@@ -126,10 +130,13 @@ class _PolledPreviewState extends State<PolledPreview> with _JpegFrameDisplay {
   Widget build(BuildContext context) {
     _screenSize = MediaQuery.sizeOf(context);
     rememberPixelRatio(context);
+    if (widget.deviceOffline) return const PreviewUnavailable.noPower();
     final frame = buildFrame(widget.fit);
     if (frame == null) {
       return _offline
-          ? PreviewUnavailable(detail: widget.url)
+          ? const PreviewUnavailable(
+            detail: 'Waiting for the box to send a picture.',
+          )
           : const _PreviewLoading();
     }
     return Stack(
@@ -172,6 +179,7 @@ class DeviceThumbnail extends StatelessWidget {
         url: previewUrl,
         overlay: overlay,
         badgeAlignment: badgeAlignment,
+        deviceOffline: device.status == DeviceStatus.offline,
       );
     }
 
@@ -381,7 +389,9 @@ class _MjpegStreamViewState extends State<MjpegStreamView>
     } else if (frame != null) {
       content = frame;
     } else if (_offline) {
-      content = PreviewUnavailable(detail: widget.streamUrl);
+      content = const PreviewUnavailable(
+        detail: 'The live stream stopped. Trying again...',
+      );
     } else {
       content = const _PreviewLoading();
     }
@@ -498,11 +508,24 @@ mixin _JpegFrameDisplay<T extends StatefulWidget> on State<T> {
   }
 }
 
-/// Error state for a device preview. [detail] (usually the failing URL)
-/// makes a screenshot enough to diagnose it. Icon only in small thumbnails.
+/// Error state for a device preview, with a plain-language [detail] (never
+/// a URL). Icon only in small thumbnails.
 class PreviewUnavailable extends StatelessWidget {
+  final String title;
   final String detail;
-  const PreviewUnavailable({super.key, required this.detail});
+  final IconData icon;
+  const PreviewUnavailable({
+    super.key,
+    this.title = 'PREVIEW UNAVAILABLE',
+    required this.detail,
+    this.icon = Icons.error_outline,
+  });
+
+  /// The controller reports the box offline: no power or no network cable.
+  const PreviewUnavailable.noPower({super.key})
+    : title = 'NO POWER / OFFLINE',
+      detail = 'Check the box power and network cable.',
+      icon = Icons.power_off_outlined;
 
   @override
   Widget build(BuildContext context) {
@@ -510,9 +533,9 @@ class PreviewUnavailable extends StatelessWidget {
       color: Colors.black,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          const icon = Icon(Icons.error_outline, color: Colors.white54, size: 20);
+          final icon = Icon(this.icon, color: Colors.white54, size: 20);
           if (constraints.maxHeight < 90) {
-            return const Center(child: icon);
+            return Center(child: icon);
           }
           return Center(
             child: Padding(
@@ -522,9 +545,9 @@ class PreviewUnavailable extends StatelessWidget {
                 children: [
                   icon,
                   const SizedBox(height: 4),
-                  const Text(
-                    'PREVIEW UNAVAILABLE',
-                    style: TextStyle(
+                  Text(
+                    title,
+                    style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,

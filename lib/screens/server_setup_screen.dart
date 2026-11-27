@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_shell.dart';
 import '../config/api_config.dart';
 import '../services/controller_discovery.dart';
+import '../services/network_binding.dart';
 import 'sc1_ble_setup_screen.dart';
 
 /// Shown right after login so the client can point the app at their AV
@@ -24,7 +25,9 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
   late final TextEditingController _ipCtrl;
   String? _error;
   bool _searching = false;
-  bool _choosePath = true;
+  // checking → straight to the app if an SC-1 answers; otherwise the
+  // choice between connecting to an existing SC-1 or setting up a new one.
+  _Stage _stage = _Stage.checking;
   List<FoundController> _found = const [];
 
   static final _ipv4Re = RegExp(
@@ -35,7 +38,45 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
   void initState() {
     super.initState();
     _ipCtrl = TextEditingController(text: ApiConfig.ip ?? '');
-    _search();
+    _start();
+  }
+
+  // Day 2: an SC-1 that's already set up should just connect.
+  Future<void> _start() async {
+    // On the SC-1's hotspot (no internet) Android would otherwise use mobile
+    // data for the requests below.
+    await NetworkBinding.bindToWifi();
+    final saved = ApiConfig.ip;
+    if (saved != null && saved.isNotEmpty) {
+      // rediscover() also tries the SC-1's hotspot address.
+      if (await ApiConfig.responds(saved) || await ApiConfig.rediscover()) {
+        return _openApp();
+      }
+    } else {
+      // A phone that has never connected, but is on the SC-1's own Wi-Fi.
+      final hotspot = await ApiConfig.reachableHotspot();
+      if (hotspot != null) {
+        await ApiConfig.setIp(hotspot);
+        return _openApp();
+      }
+    }
+    await _search();
+    if (!mounted || _stage != _Stage.checking) return;
+    if (_found.length == 1) {
+      await _connect(_found.single.ip, hostname: _found.single.hostname);
+      return;
+    }
+    setState(() => _stage = _found.isEmpty ? _Stage.choose : _Stage.connect);
+  }
+
+  void _openApp() {
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AppShell(isAdmin: widget.isAdmin),
+      ),
+    );
   }
 
   @override
@@ -46,13 +87,17 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
 
   Future<void> _search({bool retryIfEmpty = true}) async {
     setState(() => _searching = true);
-    final found = await ControllerDiscovery.find();
+    final announced = await ControllerDiscovery.find();
     if (!mounted) return;
     // The first search on iOS can come back empty while the "find devices
     // on your local network" permission prompt is still up, so try once more.
-    if (found.isEmpty && retryIfEmpty) {
+    if (announced.isEmpty && retryIfEmpty) {
       return _search(retryIfEmpty: false);
     }
+    // A controller announces all its addresses (cable, hotspot, the one on
+    // the AV switch); list it once, at an address this phone can reach.
+    final found = await ApiConfig.reachable(announced);
+    if (!mounted) return;
     setState(() {
       _searching = false;
       _found = found;
@@ -76,6 +121,7 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
       if (mounted) {
         setState(() {
           _searching = false;
+          _stage = _Stage.connect;
           _error =
               'Could not confirm this controller. Check your network and try again.';
         });
@@ -83,14 +129,7 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
       return;
     }
     await ApiConfig.setIp(ip, hostname: hostname);
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => AppShell(isAdmin: widget.isAdmin),
-        ),
-      );
-    }
+    _openApp();
   }
 
   Future<void> _continueWithTypedIp() async {
@@ -110,7 +149,8 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_choosePath) return _buildSetupPaths();
+    if (_stage == _Stage.checking) return _buildChecking();
+    if (_stage == _Stage.choose) return _buildSetupPaths();
     return Scaffold(
       backgroundColor: AppTheme.backgroundLight,
       body: SafeArea(
@@ -129,7 +169,7 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'Connect to AV Controller',
+                    'Connect to Existing SC-1',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
@@ -143,11 +183,62 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                   _panel(child: _buildFoundList()),
                   const SizedBox(height: 16),
                   _panel(child: _buildManualEntry()),
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    onPressed: _openBluetoothSetup,
+                    icon: const Icon(Icons.bluetooth, size: 18),
+                    label: const Text('Set Up New SC-1 instead'),
+                  ),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildChecking() {
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundLight,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: AppTheme.accentWhite),
+                const SizedBox(height: 24),
+                Text(
+                  'Looking for your SC-1...',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Make sure this phone is on the same Wi-Fi as your SC-1.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 24),
+                TextButton(
+                  onPressed: () => setState(() => _stage = _Stage.choose),
+                  child: const Text('Skip'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openBluetoothSetup() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Sc1BleSetupScreen(isAdmin: widget.isAdmin),
       ),
     );
   }
@@ -170,64 +261,38 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Set up your SC-1',
+                    'No SC-1 found',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'Choose how your SC-1 connects to the network.',
+                    "We couldn't find an SC-1 on this Wi-Fi. Is yours already "
+                    'set up, or is it new?',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white70),
+                    style: TextStyle(color: Colors.white70, height: 1.4),
                   ),
                   const SizedBox(height: 28),
                   _setupChoice(
-                    icon: Icons.bluetooth,
-                    title: 'New SC-1',
-                    subtitle: 'Set up Wi-Fi over Bluetooth',
-                    onTap:
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder:
-                                (_) =>
-                                    Sc1BleSetupScreen(isAdmin: widget.isAdmin),
-                          ),
-                        ),
-                  ),
-                  const SizedBox(height: 12),
-                  _setupChoice(
-                    icon: Icons.cable,
-                    title: 'SC-1 cable connected to my network',
-                    subtitle: 'Find it on the same Wi-Fi as this phone',
-                    onTap: () => setState(() => _choosePath = false),
-                  ),
-                  const SizedBox(height: 12),
-                  _setupChoice(
-                    icon: Icons.wifi,
-                    title: 'Dedicated AV Wi-Fi',
+                    icon: Icons.link_rounded,
+                    title: 'Connect to Existing SC-1',
                     subtitle:
-                        'Connect this phone to the AV Wi-Fi, then find the SC-1',
-                    onTap:
-                        () => showDialog<void>(
-                          context: context,
-                          builder:
-                              (dialogContext) => AlertDialog(
-                                title: const Text('Connect to the AV Wi-Fi'),
-                                content: const Text(
-                                  'Connect this phone to the dedicated AV Wi-Fi, then continue.',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.pop(dialogContext);
-                                      setState(() => _choosePath = false);
-                                    },
-                                    child: const Text('Continue'),
-                                  ),
-                                ],
-                              ),
-                        ),
+                        'Already set up, or plugged into your network. Join '
+                        'the same Wi-Fi (or the dedicated AV Wi-Fi), then '
+                        'search or enter its IP.',
+                    onTap: () {
+                      setState(() => _stage = _Stage.connect);
+                      _search(retryIfEmpty: false);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _setupChoice(
+                    icon: Icons.bluetooth,
+                    title: 'Set Up New SC-1',
+                    subtitle:
+                        'First time, or after a reset. Send it your Wi-Fi '
+                        'over Bluetooth.',
+                    onTap: _openBluetoothSetup,
                   ),
                 ],
               ),
@@ -428,3 +493,5 @@ class _ServerSetupScreenState extends State<ServerSetupScreen> {
     );
   }
 }
+
+enum _Stage { checking, choose, connect }

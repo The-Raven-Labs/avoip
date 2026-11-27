@@ -58,6 +58,51 @@ void main() {
     expect(tx.currentTxIp, isNull);
   });
 
+  test('reads selected, and link-local IPs, from the 2026-11 device list', () {
+    // Shape from the brief: no router, boxes on 169.254.x.x, routed by channel.
+    final devices = DeviceApiService.parseDevices(
+      jsonDecode('''[
+        {"id":"3f2c","ip":"169.254.54.160","mac":"447CAC020013",
+         "hostname":"Auth-VRX-1_447CAC020013","device_type":"rx",
+         "status":"online","last_seen":"2026-11-18T10:02:11+00:00",
+         "current_tx_ip":"169.254.10.20","selected":"0032","channel":null,
+         "preview_url":"http://192.168.50.1:8000/api/v1/devices/3f2c/preview.jpg",
+         "stream_url":"http://192.168.50.1:8000/api/v1/devices/3f2c/stream"},
+        {"id":"9a1b","ip":"169.254.10.20","mac":"447CAC010013",
+         "hostname":"Auth-VTX-1_447CAC010013","device_type":"tx",
+         "status":"online","current_tx_ip":null,"selected":null,
+         "channel":"0032"},
+        {"id":"c0de","ip":"192.168.168.115","mac":"447CAC020099",
+         "device_type":"rx","status":"online",
+         "current_tx_ip":"192.168.168.209","selected":"192.168.168.209"}
+      ]'''),
+    );
+
+    final channelRx = devices[0];
+    expect(channelRx.ip, '169.254.54.160');
+    expect(channelRx.selected, '0032');
+    expect(channelRx.currentTxIp, '169.254.10.20');
+    expect(channelRx.channel, isNull);
+    // The controller's own address, not the box's, serves the pictures.
+    expect(channelRx.previewUrl, startsWith('http://192.168.50.1:8000/'));
+
+    final tx = devices[1];
+    expect(tx.channel, '0032');
+    expect(tx.selected, isNull);
+
+    // An Rx still routed the old way reports an IP.
+    expect(devices[2].selected, '192.168.168.209');
+  });
+
+  test('an empty selected means nothing is selected', () {
+    final devices = DeviceApiService.parseDevices([
+      {'ip': '10.0.0.2', 'mac': '447CAC040013', 'device_type': 'rx', 'selected': ''},
+      {'ip': '10.0.0.3', 'mac': '447CAC050013', 'device_type': 'rx'},
+    ]);
+    expect(devices[0].selected, isNull);
+    expect(devices[1].selected, isNull);
+  });
+
   test('skips entries without an IP and accepts a devices wrapper', () {
     final devices = DeviceApiService.parseDevices({
       'devices': [

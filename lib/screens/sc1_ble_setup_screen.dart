@@ -8,6 +8,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../config/api_config.dart';
 import '../services/controller_discovery.dart';
+import '../services/network_binding.dart';
 import '../services/sc1_ble_setup.dart';
 import '../widgets/app_shell.dart';
 
@@ -179,11 +180,18 @@ class _Sc1BleSetupScreenState extends State<Sc1BleSetupScreen>
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Enter the code printed on the SC-1 sticker.'),
+                const Text('Enter the code printed on the SC-1 label.'),
                 TextField(
                   controller: controller,
                   autofocus: true,
+                  // A code isn't a word: keep it out of the keyboard's
+                  // suggestions and learned words.
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(labelText: 'Setup code'),
+                  onSubmitted:
+                      (value) => Navigator.pop(dialogContext, value),
                 ),
               ],
             ),
@@ -194,14 +202,16 @@ class _Sc1BleSetupScreenState extends State<Sc1BleSetupScreen>
               ),
               FilledButton(
                 onPressed:
-                    () => Navigator.pop(dialogContext, controller.text.trim()),
+                    () => Navigator.pop(dialogContext, controller.text),
                 child: const Text('Verify'),
               ),
             ],
           ),
     );
     controller.dispose();
-    return code?.isEmpty == true ? null : code;
+    if (code == null) return null;
+    final normalized = Sc1BleSetup.normalizeSetupCode(code);
+    return normalized.isEmpty ? null : normalized;
   }
 
   Future<bool> _verifySetupCode() async {
@@ -224,6 +234,10 @@ class _Sc1BleSetupScreenState extends State<Sc1BleSetupScreen>
   }
 
   String _writeError(Sc1BleWriteException error) {
+    if (error.original is StateError) {
+      return "This SC-1 can't take a setup code. Update the SC-1 software, "
+          'then try again.';
+    }
     if (error.status?.state == 'connecting')
       return 'A Wi-Fi connection is already running. Waiting for its result…';
     if (error.status?.state == 'failed')
@@ -237,7 +251,7 @@ class _Sc1BleSetupScreenState extends State<Sc1BleSetupScreen>
       0x80 =>
         'The setup details were not accepted. Check the network name and try again.',
       0x0D => 'The network name or password is too long.',
-      _ => 'Could not send Wi-Fi details. Check the setup code and try again.',
+      _ => "Couldn't connect the SC-1 to that Wi-Fi. Try again, or reconnect to the SC-1 over Bluetooth.",
     };
   }
 
@@ -257,7 +271,7 @@ class _Sc1BleSetupScreenState extends State<Sc1BleSetupScreen>
         setState(
           () =>
               _error =
-                  'Could not scan for Wi-Fi networks. Refresh to try again.',
+                  'The SC-1 could not list Wi-Fi networks. Tap refresh, or choose "Other network" and type the name.',
         );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -488,6 +502,9 @@ class _Sc1BleSetupScreenState extends State<Sc1BleSetupScreen>
       });
       return;
     }
+    // On a Wi-Fi without internet Android would use mobile data for the
+    // checks below.
+    await NetworkBinding.bindToWifi();
     // Status.ip is the SC-1 Wi-Fi address, so verify it directly first.
     String? working;
     if (fallbackIp != null &&
@@ -553,8 +570,9 @@ class _Sc1BleSetupScreenState extends State<Sc1BleSetupScreen>
   }
 
   String _unitNumber() =>
-      _selectedDevice?.advertisementData.advName.split(' ').last ??
-      'Controller';
+      _selectedDevice == null
+          ? 'Controller'
+          : Sc1BleSetup.nameOf(_selectedDevice!).split(' ').last;
 
   @override
   Widget build(BuildContext context) {
@@ -621,7 +639,7 @@ class _Sc1BleSetupScreenState extends State<Sc1BleSetupScreen>
                     Card(
                       child: ListTile(
                         leading: const Icon(Icons.bluetooth),
-                        title: Text(device.advertisementData.advName),
+                        title: Text(Sc1BleSetup.nameOf(device)),
                         subtitle: Text('Signal ${device.rssi} dBm'),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: _busy ? null : () => _connect(device),

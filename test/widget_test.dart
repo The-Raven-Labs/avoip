@@ -16,6 +16,6 @@ void main() {
 
     // Verify that login screen is shown.
     expect(find.text('Authenticate for Control.'), findsOneWidget);
-    expect(find.text('Access Matrix'), findsOneWidget);
+    expect(find.text('Sign In'), findsOneWidget);
   });
 }

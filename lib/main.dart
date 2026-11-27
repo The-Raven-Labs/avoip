@@ -36,8 +36,8 @@ class AuthenticAvApp extends StatelessWidget {
   // "Remember me" with a known server goes straight into the app.
   Widget _startScreen() {
     final user = Session.rememberedUser;
-    if (user != null && ApiConfig.isConfigured) {
-      return AppShell(isAdmin: user.role == 'Admin');
+    if (user != null && !user.mustChangePassword && ApiConfig.isConfigured) {
+      return AppShell(isAdmin: user.isAdmin);
     }
     return const LoginScreen();
   }

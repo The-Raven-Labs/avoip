@@ -60,6 +60,41 @@ class _ConfigurationModuleState extends State<ConfigurationModule> {
     return all;
   }
 
+  // Decommissioning removes the device and its routes from the app, so
+  // ask first.
+  Future<bool> _confirmDecommission(BuildContext ctx, Device device) async {
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder:
+          (dialogContext) => AlertDialog(
+            backgroundColor: AppTheme.backgroundLight,
+            title: const Text(
+              'Decommission device?',
+              style: TextStyle(color: AppTheme.accentWhite),
+            ),
+            content: Text(
+              'Are you sure you want to decommission ${device.name}? '
+              'This action cannot be undone.',
+              style: const TextStyle(color: AppTheme.textMuted),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text(
+                  'Decommission',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+              ),
+            ],
+          ),
+    );
+    return confirmed == true;
+  }
+
   void _showEditDeviceDialog(Device device) {
     final nameCtrl = TextEditingController(text: device.name);
     final locCtrl = TextEditingController(text: device.location);
@@ -176,6 +211,9 @@ class _ConfigurationModuleState extends State<ConfigurationModule> {
                           children: [
                             TextButton(
                               onPressed: () async {
+                                if (!await _confirmDecommission(ctx, device)) {
+                                  return;
+                                }
                                 await AppState.instance.removeDevice(
                                   device.id,
                                   device.location,
@@ -184,7 +222,9 @@ class _ConfigurationModuleState extends State<ConfigurationModule> {
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('${device.name} Decoupled'),
+                                      content: Text(
+                                        '${device.name} decommissioned',
+                                      ),
                                       backgroundColor: Colors.redAccent,
                                       behavior: SnackBarBehavior.floating,
                                     ),
@@ -376,8 +416,21 @@ class _ConfigurationModuleState extends State<ConfigurationModule> {
   Widget _buildDeviceCard(Device dev) {
     final isTx = dev.type == DeviceType.tx;
     final isOnline = dev.status == DeviceStatus.online;
+    // Pending = not confirmed by the controller yet (just opened the app).
+    final isChecking = dev.status == DeviceStatus.pending;
     final typeColor = isTx ? Colors.purpleAccent : Colors.blueAccent;
-    final statusColor = isOnline ? Colors.greenAccent : Colors.redAccent;
+    final statusColor =
+        isOnline
+            ? Colors.greenAccent
+            : isChecking
+            ? Colors.grey
+            : Colors.redAccent;
+    final statusText =
+        isOnline
+            ? 'ONLINE'
+            : isChecking
+            ? 'CHECKING'
+            : 'OFFLINE';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -386,7 +439,9 @@ class _ConfigurationModuleState extends State<ConfigurationModule> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color:
-              isOnline ? Colors.white.withValues(alpha: 0.1) : Colors.redAccent,
+              isOnline || isChecking
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : Colors.redAccent,
         ),
       ),
       child: Row(
@@ -416,7 +471,7 @@ class _ConfigurationModuleState extends State<ConfigurationModule> {
                     _tag(isTx ? 'TX' : 'RX', typeColor),
                     if (isTx && dev.channel != null)
                       _tag('Ch ${dev.channel}', Colors.orangeAccent),
-                    _tag(isOnline ? 'ONLINE' : 'OFFLINE', statusColor),
+                    _tag(statusText, statusColor),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -477,7 +532,11 @@ class _ConfigurationModuleState extends State<ConfigurationModule> {
 
   Widget _buildDeviceIcon(Device dev) {
     final isTx = dev.type == DeviceType.tx;
-    final isOnline = dev.status == DeviceStatus.online;
+    final dotColor = switch (dev.status) {
+      DeviceStatus.online => Colors.greenAccent,
+      DeviceStatus.pending => Colors.grey,
+      _ => Colors.redAccent,
+    };
 
     return Stack(
       children: [
@@ -503,7 +562,7 @@ class _ConfigurationModuleState extends State<ConfigurationModule> {
             width: 14,
             height: 14,
             decoration: BoxDecoration(
-              color: isOnline ? Colors.greenAccent : Colors.redAccent,
+              color: dotColor,
               shape: BoxShape.circle,
               border: Border.all(color: AppTheme.highlightGrey, width: 2),
             ),
